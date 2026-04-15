@@ -4,12 +4,27 @@
 
 ## 설치 (개발자용)
 
-> **사전 조건:** 이 repo는 private이다. GitHub 인증 필요.
->
-> `gh auth status`로 로그인 확인. 안 되어 있으면 `gh auth login`.
-> (백그라운드 자동 업데이트를 원하면 `GITHUB_TOKEN` 환경변수도 설정)
+### 1단계: GitHub 인증 설정 (한 번만)
 
-Claude Code에서:
+**이 repo는 private**이라 GitHub 인증 필요. **자동 업데이트**도 원한다면 **환경변수 설정이 필수**다.
+
+```bash
+# GitHub Personal Access Token 생성
+#   → https://github.com/settings/tokens 에서 "repo" 권한으로 생성
+
+# ~/.zshrc 또는 ~/.bashrc에 추가
+export GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxx
+
+# 셸 재시작 또는
+source ~/.zshrc
+```
+
+> 💡 **왜 필요한가?**
+> - `gh auth login`만 있으면 **설치는 가능**
+> - **백그라운드 자동 업데이트**는 인터랙티브 인증이 안 되므로 `GITHUB_TOKEN` 필수
+> - 없으면 Claude Code 시작 시 조용히 업데이트 실패 (구버전에서 멈춤)
+
+### 2단계: Claude Code에서 설치
 
 ```bash
 # 마켓플레이스 등록 (최초 1회)
@@ -19,13 +34,17 @@ Claude Code에서:
 /plugin install lpad-preflight@syntnote-lpad
 ```
 
-설치 후에는 자동 업데이트된다.
+### 자동 업데이트 동작
+
+- Claude Code 시작할 때마다 자동으로 최신 버전 확인
+- `plugin.json`의 `version`이 올라가면 → 자동 반영
+- 수동 업데이트: `/plugin marketplace update syntnote-lpad`
 
 ## 플러그인 목록
 
 | 이름 | 용도 | 버전 |
 |------|------|------|
-| `lpad-preflight` | lpad 배포 전 프로젝트 사전 점검 | 0.1.0 |
+| `lpad-preflight` | lpad 배포 전 프로젝트 사전 점검 | 0.1.1 |
 
 ### lpad-preflight
 
