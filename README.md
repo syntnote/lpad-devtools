@@ -4,41 +4,15 @@
 
 ## 설치 (개발자용)
 
-### 1단계: GitHub 인증 설정 (한 번만)
-
-**이 repo는 private**이라 GitHub 인증 필요. **자동 업데이트**도 원한다면 **환경변수 설정이 필수**다.
+Claude Code에서 아래 두 줄만 실행하면 끝:
 
 ```bash
-# GitHub Personal Access Token 생성
-#   → https://github.com/settings/tokens 에서 "repo" 권한으로 생성
-
-# ~/.zshrc 또는 ~/.bashrc에 추가
-export GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxx
-
-# 셸 재시작 또는
-source ~/.zshrc
-```
-
-> 💡 **왜 필요한가?**
-> - `gh auth login`만 있으면 **설치는 가능**
-> - **백그라운드 자동 업데이트**는 인터랙티브 인증이 안 되므로 `GITHUB_TOKEN` 필수
-> - 없으면 Claude Code 시작 시 조용히 업데이트 실패 (구버전에서 멈춤)
-
-### 2단계: Claude Code에서 설치
-
-```bash
-# 마켓플레이스 등록 (최초 1회)
 /plugin marketplace add syntnote/lpad-claude-plugins
-
-# 플러그인 설치
 /plugin install lpad-preflight@syntnote-lpad
 ```
 
-### 자동 업데이트 동작
-
-- Claude Code 시작할 때마다 자동으로 최신 버전 확인
-- `plugin.json`의 `version`이 올라가면 → 자동 반영
-- 수동 업데이트: `/plugin marketplace update syntnote-lpad`
+별도 인증이나 환경변수 설정 불필요 (public repo).
+이후 Claude Code 시작 시마다 자동으로 최신 버전 업데이트.
 
 ## 플러그인 목록
 
@@ -55,7 +29,7 @@ source ~/.zshrc
 ```
 
 - 트랙(Amplify/ECS) 자동 감지
-- Dockerfile, .gitignore, 헬스체크 등 정적 검사
+- Dockerfile, `.gitignore`, 헬스체크 등 정적 검사
 - `docker build`, `npm run build`, 린트 실제 실행
 - 필수/경고 구분된 리포트 + 수정 가이드
 
@@ -66,9 +40,17 @@ source ~/.zshrc
 ### 플러그인 업데이트
 
 1. 해당 플러그인의 `skills/<name>/SKILL.md` 수정
-2. 해당 플러그인의 `.claude-plugin/plugin.json`에서 `version` bump (semver)
+2. `.claude-plugin/plugin.json`에서 `version` bump (semver)
 3. commit + push to main
 4. 개발자들은 다음 Claude Code 세션에서 자동 업데이트
+
+### 수동 업데이트 (긴급할 때)
+
+개발자가 즉시 최신 버전을 받으려면:
+
+```
+/plugin marketplace update syntnote-lpad
+```
 
 ### 새 플러그인 추가
 
@@ -83,7 +65,7 @@ source ~/.zshrc
 
 ### 로컬 테스트
 
-플러그인 퍼블리시 전 검증:
+퍼블리시 전 검증:
 
 ```bash
 # Claude Code에서
