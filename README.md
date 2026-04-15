@@ -18,7 +18,7 @@ Claude Code에서 아래 두 줄만 실행하면 끝:
 
 | 이름 | 용도 | 버전 |
 |------|------|------|
-| `lpad-preflight` | lpad 배포 전 프로젝트 사전 점검 | 0.1.1 |
+| `lpad-preflight` | lpad 배포 전 프로젝트 사전 점검 (엄격 이진 판정) | 0.2.0 |
 
 ### lpad-preflight
 

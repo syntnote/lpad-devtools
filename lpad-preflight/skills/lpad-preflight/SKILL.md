@@ -6,20 +6,39 @@ disable-model-invocation: true
 
 # lpad-preflight
 
+<!-- SKILL_VERSION: 0.2.0 — 리포트 헤더 생성 시 이 값을 사용할 것.
+     버전 변경 시 이 줄의 값과 ../../.claude-plugin/plugin.json의 version을 함께 bump. -->
+
 lpad 인프라에 배포할 프로젝트를 사전 점검한다. lpad = launchpad(발사대)에서 착안한 "이륙 전 점검(preflight check)".
 
 **목표:** 개발자가 `/lpad-preflight` 한 번 실행하면 자기 프로젝트의 배포 준비 상태를 종합 진단받는다.
+
+## 판정 원칙 (엄격 모드)
+
+- 검사 결과는 **`✅ PASS` 또는 `❌ FAIL` 둘 중 하나만** 존재한다. "경고", "보류", "주의", "스킵" 같은 중간 상태 없음.
+- **모든 검사가 PASS여야 배포 가능.** 단 하나라도 FAIL이면 `❌ 실패`로 종료하고 배포 금지.
+- 어떤 검사가 해당 프로젝트에 **적용 불가능**하면(예: Python 프로젝트에서 `tsc` 체크) 리포트에 넣지 않는다. 리포트에 나온 항목은 전부 실행됐고, 전부 PASS여야 한다.
 
 ## 실행 절차
 
 반드시 이 순서대로 진행한다. 각 단계 결과를 누적해서 마지막에 종합 리포트를 만든다.
 
-### 1단계: 트랙 감지
+### 0단계: 실행 정보 캡처
 
-현재 작업 디렉토리(`pwd`)를 기준으로 프로젝트 구조를 파악한다.
+리포트 헤더에 쓸 정보를 먼저 수집한다.
 
 ```bash
-pwd
+date '+%Y-%m-%d %H:%M:%S %Z'    # 실행 시각
+pwd                              # 작업 디렉토리
+```
+
+버전은 이 SKILL.md 상단의 `SKILL_VERSION` 주석에서 읽어서 리포트에 표시한다 (현재: **0.2.0**).
+
+### 1단계: 트랙 감지
+
+현재 작업 디렉토리를 기준으로 프로젝트 구조를 파악한다.
+
+```bash
 ls -la
 ```
 
@@ -27,81 +46,72 @@ ls -la
 - 루트에 `Dockerfile` 있으면 → **ECS 트랙**
 - 루트에 `package.json`과 (`vite.config.*` 또는 `next.config.*` 또는 `webpack.config.*`)이 있으면 → **Amplify 트랙**
 - 서브디렉토리(`api/`, `frontend/`, `landing/` 등)에 각각 위 조건 매치되면 → **모노레포** (각 서브디렉토리를 독립 프로젝트로 취급)
-- 어느 쪽도 아니면 → "lpad 트랙 구조가 아님" 경고 후 종료
+- 어느 쪽도 아니면 → "lpad 트랙 구조가 아님"으로 즉시 FAIL 종료
 
 모노레포인 경우 각 서브 프로젝트마다 2~4단계를 반복 실행.
 
 ### 2단계: 정적 검사
 
-파일을 Read/Grep으로 읽어 확인. 절대 건너뛰지 말 것 — 각 항목을 하나씩 명시적으로 검증한다.
+파일을 Read/Grep으로 읽어 확인. 각 항목을 하나씩 명시적으로 검증한다. **적용 가능한 항목은 전부 PASS해야 한다.**
 
 #### 공통 항목
 
-**C1. `.gitignore` 민감 파일 제외**
-- `.gitignore` 파일 Read
-- 다음 패턴이 모두 포함되어야 함: `.env`, `.env.*`, `*.pem`, `*.key`
-- 하나라도 없으면 **필수 실패**
+**C1. `.gitignore` 민감 파일 제외** (적용: 항상)
+- `.gitignore` Read
+- `.env`, `.env.*`, `*.pem`, `*.key` 모두 포함되어야 함 → 하나라도 없으면 FAIL
 
-**C2. 민감 파일 커밋 이력 확인**
-- `git ls-files | grep -E '\.env$|\.env\.|firestore-key\.json|\.pem$|\.key$'` 실행
-- 결과가 있으면 **필수 실패** (해당 파일명 제시)
-- 커밋되지 않은 경우도 확인: `git log --all --full-history --source -- .env .env.* 2>/dev/null | head -5`
+**C2. 민감 파일 커밋 이력 없음** (적용: 항상)
+- `git ls-files | grep -E '\.env$|\.env\.|firestore-key\.json|\.pem$|\.key$'`
+- 결과 있으면 FAIL (파일명 제시). 파일 **내용**은 출력 금지.
 
-**C3. 배포 워크플로우 존재**
-- `.github/workflows/` 디렉토리 확인
-- `deploy-*.yml` 파일 1개 이상 존재해야 함
-- 없으면 **경고** ("인프라팀에 워크플로우 요청 필요")
+**C3. 배포 워크플로우 존재** (적용: 항상)
+- `.github/workflows/deploy-*.yml` 1개 이상 존재해야 함
+- 없으면 FAIL ("인프라팀에 워크플로우 요청 필요")
 
-**C4. main 브랜치 직접 push 이력**
-- `git log main --oneline -20` 실행
-- PR merge 커밋이 아닌 직접 커밋이 최근 있으면 **경고**
-- (Merge commit은 `^Merge pull request` 또는 `squash merge`의 경우 이 검사 생략 가능)
+**C4. main 직접 commit 없음** (적용: git 히스토리에 main 브랜치 있을 때)
+- `git log main --oneline -20`에서 비-merge 직접 commit 확인
+- merge commit이 아닌 직접 commit 발견 시 FAIL
 
 #### ECS 트랙 항목
 
 **E1. Dockerfile 존재**
-- Read `Dockerfile` — 없으면 **필수 실패**
+- 없으면 FAIL
 
 **E2. EXPOSE 포트와 앱 실행 포트 일치**
-- Dockerfile에서 `EXPOSE <port>` 추출
-- Dockerfile의 `CMD`/`ENTRYPOINT`에서 포트 추출 (예: `--port 8080`, `uvicorn ... --port 8080`)
-- 앱 코드(main.py, index.js 등)에서도 포트 사용 패턴 grep (`PORT`, `listen(`, `--port`)
-- 불일치하면 **필수 실패** — 구체적으로 어디가 몇 번인지 제시
+- Dockerfile `EXPOSE <port>` 값과 CMD/ENTRYPOINT의 port, 앱 코드(main.py, index.js 등)의 listen port가 **전부 동일**해야 함
+- 불일치 시 FAIL — 어디가 어떤 값인지 구체적으로 제시
 
-**E3. 헬스체크 엔드포인트 구현 확인**
-- lpad 등록 시 기본 경로 `/api/health` (main.tf에서 확인 가능)
-- 앱 코드에서 해당 경로 grep: `"/api/health"`, `'/api/health'`, `@app.get.*health`, `app.get.*health`
-- 미발견 시 **필수 실패**
-- 발견되면 해당 파일과 라인 제시
+**E3. 헬스체크 엔드포인트 구현**
+- lpad 기본 경로 `/api/health`
+- 앱 코드에서 grep: `"/api/health"`, `'/api/health'`, `@app.get.*health`, `app.get.*health`
+- 미발견 시 FAIL
 
-**E4. `.dockerignore` 존재 + 민감 파일 제외**
-- `.dockerignore` Read — 없으면 **필수 실패**
-- `.env`, `.env.*` 포함 여부 — 빠지면 **필수 실패** (시크릿이 이미지에 포함되는 보안 사고 위험)
-- `node_modules`, `__pycache__`, `.git` 포함 — 빠지면 **경고** (빌드 효율 저하)
+**E4. `.dockerignore` 존재 + `.env` 제외**
+- 파일 없거나 `.env`, `.env.*` 누락 시 FAIL (시크릿 이미지 포함 위험)
+- `node_modules`, `__pycache__`, `.git`도 포함되어야 함. 빠지면 FAIL.
 
 **E5. 비-root 사용자 설정**
-- Dockerfile에 `USER <name>` 지시문 존재 여부
-- 없으면 **경고** (필수 아니지만 보안 권장)
+- Dockerfile에 `USER <name>` 지시문 필수
+- 없으면 FAIL
 
 #### Amplify 트랙 항목
 
 **A1. `package.json`의 `build` 스크립트**
-- `package.json` Read → `scripts.build` 존재 여부
-- 없으면 **필수 실패**
+- `scripts.build` 없으면 FAIL
 
 **A2. 빌드 설정 파일 존재**
 - `vite.config.*`, `next.config.*`, `webpack.config.*` 중 하나 존재
-- 없으면 **경고** (감지된 프레임워크로 동작할 수 있으나 설정 명시 권장)
+- 없으면 FAIL
 
 **A3. lockfile 존재**
-- `package-lock.json` 또는 `pnpm-lock.yaml` 또는 `yarn.lock` 존재
-- 없으면 **필수 실패** (CI에서 `npm ci` 실패)
+- `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock` 중 하나 필수
+- 없으면 FAIL (CI에서 install 실패)
 
 ### 3단계: 실행 검사
 
-**실행 전 안내:** "빌드와 린트를 실제로 실행합니다 (2~5분 소요)" 사용자에게 알리고 진행.
+**실행 전 안내:** "빌드와 테스트를 실제로 실행합니다 (2~5분 소요)" 사용자에게 알리고 진행.
 
-각 명령은 Bash로 직접 실행. timeout 설정 필수.
+각 명령은 Bash로 직접 실행. timeout 설정 필수. **사전 조건 위반은 FAIL** (예: Docker 필요한 프로젝트인데 Docker 미설치 → "Docker가 필요합니다" FAIL).
 
 #### ECS 트랙 실행
 
@@ -109,20 +119,14 @@ ls -la
 ```bash
 docker build -t lpad-preflight-test:latest . 2>&1 | tail -50
 ```
-- timeout 600000 (10분)
-- 실패 시 **필수 실패**. 마지막 에러 줄 제시
-- 성공 시 다음으로
+- timeout 600000
+- 실패 또는 `docker` 명령 없으면 FAIL
 
-**R-E2. 컨테이너 실행 + 헬스체크**
-- 등록 포트로 컨테이너 실행 (디폴트 3000, 보통 `Dockerfile`의 EXPOSE 값 사용)
+**R-E2. 컨테이너 헬스체크**
 ```bash
-# 랜덤 호스트 포트로 충돌 회피
 CID=$(docker run -d -p 0:<container_port> lpad-preflight-test:latest)
-
-# HOST_PORT 추출 — IPv4(0.0.0.0:49152)와 IPv6(:::49152) 둘 다 대응
 HOST_PORT=$(docker port $CID <container_port> | head -1 | sed 's/.*://')
 
-# 헬스체크 — 느린 앱 대비 최대 5회 재시도 (총 ~10초)
 HTTP_CODE=000
 for i in 1 2 3 4 5; do
   sleep 2
@@ -130,132 +134,123 @@ for i in 1 2 3 4 5; do
   [[ "$HTTP_CODE" == "200" ]] && break
 done
 
-# 실패 시 로그 수집 (정리 전에)
 if [[ "$HTTP_CODE" != "200" ]]; then
   docker logs $CID 2>&1 | tail -30
 fi
 
-# 컨테이너 정리
 docker rm -f $CID >/dev/null 2>&1 || true
-# 이미지 정리 (디스크 누적 방지)
 docker rmi lpad-preflight-test:latest >/dev/null 2>&1 || true
 ```
-- 200이 아니면 **필수 실패** (로그 제시)
-- 컨테이너/이미지 정리는 헬스체크 실패해도 반드시 실행
+- 200 아니면 FAIL (로그 제시)
+- 정리(`rm`, `rmi`)는 FAIL 상황에서도 반드시 실행
 
 #### Amplify 트랙 실행
 
-**R-A1 + R-A2. 의존성 설치 + 빌드 (패키지 매니저 자동 감지)**
-
-lockfile 우선순위: `pnpm-lock.yaml` > `yarn.lock` > `package-lock.json`. 감지된 매니저로 install과 build 모두 실행 (일관성 유지).
+**R-A1 + R-A2. 의존성 설치 + 빌드**
 
 ```bash
-# 1) 감지
 if [[ -f pnpm-lock.yaml ]]; then
   PM="pnpm"; INSTALL="pnpm install --frozen-lockfile"; BUILD="pnpm run build"
 elif [[ -f yarn.lock ]]; then
   PM="yarn"; INSTALL="yarn install --frozen-lockfile"; BUILD="yarn run build"
 elif [[ -f package-lock.json ]]; then
   PM="npm"; INSTALL="npm ci"; BUILD="npm run build"
-else
-  echo "❌ lockfile 없음 — CI에서 의존성 설치 실패할 것"; exit 1
 fi
 
-# 2) 설치 (timeout 300000)
-$INSTALL
-
-# 3) 빌드 (timeout 600000)
-$BUILD 2>&1 | tail -40
-
-# 4) 결과 확인 — vite 기본이 dist/, next는 .next/, cra는 build/
+$INSTALL                              # timeout 300000
+$BUILD 2>&1 | tail -40                # timeout 600000
 ls dist/ 2>/dev/null || ls build/ 2>/dev/null || ls .next/ 2>/dev/null | head
 ```
 
-- 설치 실패 시 **필수 실패** (예: lockfile 불일치, 의존성 해소 안 됨)
-- 빌드 실패 시 **필수 실패**
-- output 디렉토리가 비어있으면 **필수 실패**
+- install 실패, 빌드 실패, output 디렉토리가 비어있으면 전부 FAIL
 
-#### 공통 실행 (있으면 실행, 없으면 스킵)
+#### 공통 실행 (해당 도구/설정이 있는 경우에만 실행)
 
-Node 관련 명령(린트/타입/테스트)은 앞서 R-A1에서 감지한 `$PM` 패키지 매니저를 재사용한다 (`$PM run lint` 등). 감지가 없었으면 `npm` 사용.
+Node 명령은 앞서 감지한 `$PM`을 재사용.
 
-**R-C1. 린트**
-- `package.json`의 `scripts.lint` 존재 시 `$PM run lint`
-- Python: `ruff check .` 또는 `flake8 .` (설정 파일 있는 것)
-- 실패 시 **경고** (배포 차단 아님)
+**R-C1. 린트** (적용: 설정 있을 때)
+- `package.json`의 `scripts.lint` 있으면 `$PM run lint` → 실패 시 FAIL
+- Python `ruff.toml`, `.ruff.toml`, `pyproject.toml`에 ruff 설정 있으면 `ruff check .` → 실패 시 FAIL
+- `.flake8`, `setup.cfg`에 flake8 설정 있으면 `flake8 .` → 실패 시 FAIL
 
-**R-C2. 타입 체크**
-- `package.json`의 `scripts.typecheck` 존재 시 `$PM run typecheck`, 아니면 `tsconfig.json` 있으면 `npx tsc --noEmit`
-- Python: `mypy` 또는 `pyright` (설정 파일 있을 때)
-- 실패 시 **경고**
+**R-C2. 타입 체크** (적용: 설정 있을 때)
+- `package.json`의 `scripts.typecheck` → `$PM run typecheck` → 실패 시 FAIL
+- `tsconfig.json` 있으면 `npx tsc --noEmit` → 실패 시 FAIL
+- `mypy.ini` 또는 `pyproject.toml`에 mypy 설정 있으면 `mypy .` → 실패 시 FAIL
+- `pyrightconfig.json` 있으면 `pyright` → 실패 시 FAIL
 
-**R-C3. 테스트**
-- `package.json`의 `scripts.test` 있고 placeholder(`"echo ...exit 1"`) 아니면 `$PM test`
-- `pytest` (tests/ 디렉토리 + pytest 설정 있을 때)
-- timeout 300000 (5분)
-- 실패 시 **경고** (배포는 가능하나 권장 안 함)
+**R-C3. 테스트** (적용: 테스트 코드 있을 때)
+- `package.json`의 `scripts.test`가 placeholder(`"echo ... exit 1"`) 아닌 경우 → `$PM test` → 실패 시 FAIL
+- `tests/` 디렉토리 + `pytest` 설정이 있으면 `pytest` → 실패 시 FAIL
+- timeout 300000
+
+**적용 가능 판단 원칙:**
+- "설정 파일이 있다" = 개발자가 이 검사를 기대한다 = 반드시 실행 + PASS 필수
+- 설정 파일이 아예 없으면 해당 검사는 리포트에 포함하지 않는다 (적용 불가)
 
 ### 4단계: 리포트 생성
 
-아래 형식으로 종합 리포트 출력. 아이콘, 구분선 포함. 섹션은 실제 실행한 것만 포함.
+**리포트 최상단에 반드시** 버전과 실행 시각을 포함한다.
 
 ```
-🚀 lpad-preflight 진단 결과
+🚀 lpad-preflight v<SKILL_VERSION>
+실행 시각: <YYYY-MM-DD HH:MM:SS TZ>
+프로젝트: <프로젝트명 또는 디렉토리명>
+트랙: <ECS | Amplify | 모노레포>
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-프로젝트: <프로젝트명>
-트랙: <ECS | Amplify | 모노레포>
-검사 시각: <timestamp>
-
 [정적 검사]
-  <아이콘> <항목명>
-  <실패/경고 시 💡 구체적 수정 방법>
+  ✅ <항목명>
+  ❌ <항목명>
+     💡 <구체적 수정 방법>
   ...
 
 [빌드 검사]
-  <아이콘> <항목명> (<소요시간>)
+  ✅ <항목명> (<소요시간>)
+  ❌ <항목명> (<소요시간>)
+     💡 <로그 요약 or 수정 방법>
   ...
 
 [코드 품질]
-  <아이콘> <도구명>: <결과>
+  ✅ <도구명>: <결과>
+  ❌ <도구명>: <결과 요약>
+     💡 <수정 방법>
   ...
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-배포 준비 상태: <✅ 통과 | ⚠️ 주의 | ❌ 실패>
-요약: <필수 실패 N건, 경고 M건>
+결과: <✅ 통과 | ❌ 실패> (FAIL N건 / 전체 M건)
 
 <다음 단계 안내>
 ```
 
-**상태 판정:**
-- 필수 실패 0건, 경고 0건 → `✅ 통과` — "배포 가능합니다"
-- 필수 실패 0건, 경고 >0 → `⚠️ 주의` — "배포 가능하지만 개선 권장"
-- 필수 실패 >0 → `❌ 실패` — "필수 항목을 먼저 해결하세요"
+**상태 판정 (엄격 이진):**
+- 모든 검사 PASS → `✅ 통과` — "배포 가능"
+- 하나라도 FAIL → `❌ 실패` — "FAIL 항목을 모두 해결한 뒤 재실행하세요. 현 상태로 배포 금지."
 
-**아이콘 규칙:**
-- ✅ 통과
-- ❌ 필수 실패
-- ⚠️ 경고
-- ⏭️ 스킵됨 (도구 미설치 등)
+**아이콘 규칙 (단 두 개):**
+- ✅ PASS
+- ❌ FAIL
+
+⚠️, ⏭️, 기타 상태 아이콘은 **절대 사용 금지**.
 
 ## 출력 원칙
 
-1. **거짓말 금지** — 실행 안 한 검사는 리포트에 포함 금지. 스킵된 건 ⏭️로 표시.
-2. **구체적 수정 가이드** — "경로 틀림" ❌ / "Dockerfile:12의 EXPOSE 3000을 8080으로 수정" ✅
-3. **파일:라인 인용** — 코드 참조 시 `path:line` 형식
-4. **긴 에러는 요약** — 빌드 실패 시 마지막 30~50줄만
-5. **정리 책임** — `docker run`한 컨테이너는 반드시 `docker rm -f`로 정리하고, `docker build`로 만든 `lpad-preflight-test:latest` 이미지도 `docker rmi`로 정리 (디스크 누적 방지)
+1. **거짓말 금지** — 실행 안 한 검사는 리포트에 넣지 않는다. 리포트에 나온 항목은 전부 실제로 실행된 것이다.
+2. **엄격 이진** — PASS/FAIL 외 중간 상태는 존재하지 않는다. "경고", "주의", "나중에 봐도 됨" 같은 표현 금지.
+3. **구체적 수정 가이드** — "경로 틀림" ❌ / "Dockerfile:12의 EXPOSE 3000을 8080으로 수정" ✅
+4. **파일:라인 인용** — 코드 참조 시 `path:line` 형식
+5. **긴 에러는 요약** — 빌드 실패 시 마지막 30~50줄만
+6. **정리 책임** — `docker run`한 컨테이너는 반드시 `docker rm -f`, `docker build`로 만든 `lpad-preflight-test:latest` 이미지도 `docker rmi`로 정리
+7. **버전/시각 헤더 필수** — 리포트 최상단에 `lpad-preflight v<SKILL_VERSION>`과 실행 시각을 반드시 기록
 
 ## 주의사항
 
-- 민감 파일 검사 시 **파일 내용을 출력하지 말 것**. 파일명과 존재 여부만 리포트.
-- `docker` 명령이 없는 환경(Docker 미설치)이면 R-E1/R-E2는 스킵하고 ⏭️로 표시. "Docker Desktop 실행 필요" 안내.
-- 모노레포에서 하위 프로젝트 검사 시 디렉토리 전환은 Bash `cd` 사용(`working_directory` 파라미터 활용).
-- 검사 중 오류가 나도 가능한 한 나머지 검사 진행. 치명적 오류(디렉토리 접근 불가 등)만 조기 종료.
+- 민감 파일 검사 시 **파일 내용을 출력하지 말 것**. 파일명과 존재 여부만.
+- Docker가 필요한 ECS 프로젝트인데 `docker` 명령이 없거나 데몬이 안 떠있으면 R-E1/R-E2는 FAIL로 처리 ("Docker Desktop 실행 필요" 안내 포함).
+- 모노레포에서 하위 프로젝트 검사 시 Bash `cd`로 디렉토리 이동.
+- 검사 도중 오류가 나도 가능한 한 나머지 검사 진행 (치명적 오류만 조기 종료). 진행된 검사들 전부 PASS여야 전체 PASS.
 
-## 흔한 lpad 오류 패턴 (참고)
-
-리포트 작성 시 관련된 경우 이 패턴도 점검:
+## 흔한 lpad 오류 패턴 (진단 시 참고)
 
 | 증상 | 실제 원인 |
 |------|----------|
