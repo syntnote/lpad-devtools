@@ -10,7 +10,6 @@
       "name": "lpad-preflight",
       "source": "./lpad-preflight",
       "description": "lpad 배포 전 프로젝트 사전 점검 — 트랙 자동 감지, 빌드/린트 실행, 설정 검증",
-      "version": "0.1.0",
       "category": "devtools",
       "tags": ["lpad", "aws", "docker"],
       "strict": true

@@ -1,7 +1,7 @@
 ---
 name: lpad-preflight
 description: 현재 디렉토리의 lpad 프로젝트가 배포 준비가 되었는지 사전 점검. 트랙(Amplify/ECS) 자동 감지, 파일 검증, 실제 빌드/린트 실행, 구체적 수정 가이드 제공. "lpad preflight", "배포 전 점검", "lpad-preflight" 키워드로 트리거.
-version: 0.1.0
+disable-model-invocation: true
 ---
 
 # lpad-preflight
@@ -118,53 +118,80 @@ docker build -t lpad-preflight-test:latest . 2>&1 | tail -50
 ```bash
 # 랜덤 호스트 포트로 충돌 회피
 CID=$(docker run -d -p 0:<container_port> lpad-preflight-test:latest)
-sleep 3
-HOST_PORT=$(docker port $CID <container_port> | awk -F: '{print $2}' | head -1)
-# 헬스체크
-curl -sf -o /dev/null -w "%{http_code}" "http://localhost:${HOST_PORT}/api/health"
-# 정리
-docker rm -f $CID
+
+# HOST_PORT 추출 — IPv4(0.0.0.0:49152)와 IPv6(:::49152) 둘 다 대응
+HOST_PORT=$(docker port $CID <container_port> | head -1 | sed 's/.*://')
+
+# 헬스체크 — 느린 앱 대비 최대 5회 재시도 (총 ~10초)
+HTTP_CODE=000
+for i in 1 2 3 4 5; do
+  sleep 2
+  HTTP_CODE=$(curl -sf -o /dev/null -w "%{http_code}" "http://localhost:${HOST_PORT}/api/health" 2>/dev/null || echo 000)
+  [[ "$HTTP_CODE" == "200" ]] && break
+done
+
+# 실패 시 로그 수집 (정리 전에)
+if [[ "$HTTP_CODE" != "200" ]]; then
+  docker logs $CID 2>&1 | tail -30
+fi
+
+# 컨테이너 정리
+docker rm -f $CID >/dev/null 2>&1 || true
+# 이미지 정리 (디스크 누적 방지)
+docker rmi lpad-preflight-test:latest >/dev/null 2>&1 || true
 ```
-- 200이 아니면 **필수 실패**
-- 실패 시 컨테이너 로그 제시: `docker logs $CID 2>&1 | tail -30`
-- 정리(`docker rm -f`)는 실패해도 반드시 실행
+- 200이 아니면 **필수 실패** (로그 제시)
+- 컨테이너/이미지 정리는 헬스체크 실패해도 반드시 실행
 
 #### Amplify 트랙 실행
 
-**R-A1. 의존성 설치**
-```bash
-# lockfile에 따라 분기
-[[ -f pnpm-lock.yaml ]] && pnpm install --frozen-lockfile
-[[ -f yarn.lock ]] && yarn install --frozen-lockfile
-[[ -f package-lock.json ]] && npm ci
-```
-- timeout 300000 (5분)
-- 실패 시 **필수 실패**
+**R-A1 + R-A2. 의존성 설치 + 빌드 (패키지 매니저 자동 감지)**
 
-**R-A2. 빌드**
+lockfile 우선순위: `pnpm-lock.yaml` > `yarn.lock` > `package-lock.json`. 감지된 매니저로 install과 build 모두 실행 (일관성 유지).
+
 ```bash
-npm run build 2>&1 | tail -40
+# 1) 감지
+if [[ -f pnpm-lock.yaml ]]; then
+  PM="pnpm"; INSTALL="pnpm install --frozen-lockfile"; BUILD="pnpm run build"
+elif [[ -f yarn.lock ]]; then
+  PM="yarn"; INSTALL="yarn install --frozen-lockfile"; BUILD="yarn run build"
+elif [[ -f package-lock.json ]]; then
+  PM="npm"; INSTALL="npm ci"; BUILD="npm run build"
+else
+  echo "❌ lockfile 없음 — CI에서 의존성 설치 실패할 것"; exit 1
+fi
+
+# 2) 설치 (timeout 300000)
+$INSTALL
+
+# 3) 빌드 (timeout 600000)
+$BUILD 2>&1 | tail -40
+
+# 4) 결과 확인 — vite 기본이 dist/, next는 .next/, cra는 build/
+ls dist/ 2>/dev/null || ls build/ 2>/dev/null || ls .next/ 2>/dev/null | head
 ```
-- timeout 600000 (10분)
-- 실패 시 **필수 실패**
-- 성공 시 `ls dist/ 2>/dev/null | head` 또는 설정된 outDir 확인
-- `dist/`가 비어있으면 **필수 실패**
+
+- 설치 실패 시 **필수 실패** (예: lockfile 불일치, 의존성 해소 안 됨)
+- 빌드 실패 시 **필수 실패**
+- output 디렉토리가 비어있으면 **필수 실패**
 
 #### 공통 실행 (있으면 실행, 없으면 스킵)
 
+Node 관련 명령(린트/타입/테스트)은 앞서 R-A1에서 감지한 `$PM` 패키지 매니저를 재사용한다 (`$PM run lint` 등). 감지가 없었으면 `npm` 사용.
+
 **R-C1. 린트**
-- `package.json`의 `scripts.lint` 존재 시 `npm run lint`
-- Python: `ruff check .` 또는 `flake8 .` (둘 중 설정 파일 있는 것)
+- `package.json`의 `scripts.lint` 존재 시 `$PM run lint`
+- Python: `ruff check .` 또는 `flake8 .` (설정 파일 있는 것)
 - 실패 시 **경고** (배포 차단 아님)
 
 **R-C2. 타입 체크**
-- `package.json`의 `scripts.typecheck` 또는 `tsc --noEmit` (tsconfig.json 있을 때)
-- `mypy` 또는 `pyright` (설정 파일 있을 때)
+- `package.json`의 `scripts.typecheck` 존재 시 `$PM run typecheck`, 아니면 `tsconfig.json` 있으면 `npx tsc --noEmit`
+- Python: `mypy` 또는 `pyright` (설정 파일 있을 때)
 - 실패 시 **경고**
 
 **R-C3. 테스트**
-- `npm test` (scripts.test 있고 `"test": "echo ..."` 같은 플레이스홀더 아닐 때)
-- `pytest` (tests/ 디렉토리 존재 시)
+- `package.json`의 `scripts.test` 있고 placeholder(`"echo ...exit 1"`) 아니면 `$PM test`
+- `pytest` (tests/ 디렉토리 + pytest 설정 있을 때)
 - timeout 300000 (5분)
 - 실패 시 **경고** (배포는 가능하나 권장 안 함)
 
@@ -217,7 +244,7 @@ npm run build 2>&1 | tail -40
 2. **구체적 수정 가이드** — "경로 틀림" ❌ / "Dockerfile:12의 EXPOSE 3000을 8080으로 수정" ✅
 3. **파일:라인 인용** — 코드 참조 시 `path:line` 형식
 4. **긴 에러는 요약** — 빌드 실패 시 마지막 30~50줄만
-5. **정리 책임** — `docker run`한 컨테이너는 반드시 `docker rm -f`로 정리
+5. **정리 책임** — `docker run`한 컨테이너는 반드시 `docker rm -f`로 정리하고, `docker build`로 만든 `lpad-preflight-test:latest` 이미지도 `docker rmi`로 정리 (디스크 누적 방지)
 
 ## 주의사항
 
