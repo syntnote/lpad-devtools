@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # lpad-preflight
 
-<!-- SKILL_VERSION: 0.2.0 — 리포트 헤더 생성 시 이 값을 사용할 것.
+<!-- SKILL_VERSION: 0.2.1 — 리포트 헤더 생성 시 이 값을 사용할 것.
      버전 변경 시 이 줄의 값과 ../../.claude-plugin/plugin.json의 version을 함께 bump. -->
 
 lpad 인프라에 배포할 프로젝트를 사전 점검한다. lpad = launchpad(발사대)에서 착안한 "이륙 전 점검(preflight check)".
@@ -32,7 +32,7 @@ date '+%Y-%m-%d %H:%M:%S %Z'    # 실행 시각
 pwd                              # 작업 디렉토리
 ```
 
-버전은 이 SKILL.md 상단의 `SKILL_VERSION` 주석에서 읽어서 리포트에 표시한다 (현재: **0.2.0**).
+버전은 이 SKILL.md 상단의 `SKILL_VERSION` 주석에서 읽어서 리포트에 표시한다 (현재: **0.2.1**).
 
 ### 1단계: 트랙 감지
 
