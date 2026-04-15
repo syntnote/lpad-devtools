@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # lpad-preflight
 
-<!-- SKILL_VERSION: 0.2.1 — 리포트 헤더 생성 시 이 값을 사용할 것.
+<!-- SKILL_VERSION: 0.2.2 — 리포트 헤더 생성 시 이 값을 사용할 것.
      버전 변경 시 이 줄의 값과 ../../.claude-plugin/plugin.json의 version을 함께 bump. -->
 
 lpad 인프라에 배포할 프로젝트를 사전 점검한다. lpad = launchpad(발사대)에서 착안한 "이륙 전 점검(preflight check)".
@@ -23,16 +23,64 @@ lpad 인프라에 배포할 프로젝트를 사전 점검한다. lpad = launchpa
 
 반드시 이 순서대로 진행한다. 각 단계 결과를 누적해서 마지막에 종합 리포트를 만든다.
 
-### 0단계: 실행 정보 캡처
+### 0단계: 버전 체크 (최우선) + 실행 정보 캡처
 
-리포트 헤더에 쓸 정보를 먼저 수집한다.
+**이 단계는 preflight 검사 자체가 시작되기 전에 반드시 먼저 실행한다. 구버전이면 검사 전체를 건너뛰고 에러만 출력하고 종료한다.**
+
+#### 0-1. 버전 체크
+
+현재 스킬 버전(`SKILL_VERSION`)을 GitHub의 최신 `plugin.json`과 비교한다.
+
+```bash
+CURRENT_VERSION="0.2.2"   # ← SKILL.md 상단 SKILL_VERSION과 동일하게 유지
+
+# 최신 버전 조회 (3초 timeout — 네트워크 이슈로 오래 기다리지 않음)
+LATEST_JSON=$(curl -sf --max-time 3 \
+  https://raw.githubusercontent.com/syntnote/lpad-claude-plugins/main/lpad-preflight/.claude-plugin/plugin.json \
+  2>/dev/null)
+
+if [[ -n "$LATEST_JSON" ]]; then
+  LATEST_VERSION=$(echo "$LATEST_JSON" | grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' \
+    | sed 's/.*"\([^"]*\)"$/\1/')
+
+  # semver 비교: sort -V 로 더 큰 쪽이 LATEST면 현재가 구버전
+  if [[ -n "$LATEST_VERSION" && "$LATEST_VERSION" != "$CURRENT_VERSION" ]]; then
+    NEWER=$(printf '%s\n%s\n' "$CURRENT_VERSION" "$LATEST_VERSION" | sort -V | tail -1)
+    if [[ "$NEWER" == "$LATEST_VERSION" ]]; then
+      # ❌ 구버전 감지 — 여기서 즉시 종료, 검사 절대 진행 금지
+      echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      echo "❌ lpad-preflight 업데이트 필요"
+      echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      echo "현재 버전: v$CURRENT_VERSION"
+      echo "최신 버전: v$LATEST_VERSION"
+      echo ""
+      echo "Claude Code에서 아래 명령 실행 후 다시 시도하세요:"
+      echo "  /plugin marketplace update syntnote-lpad"
+      echo ""
+      echo "또는 Claude Code를 완전히 재시작하세요."
+      exit 1
+    fi
+  fi
+fi
+
+# 네트워크 실패(LATEST_JSON 비어있음) 또는 최신 버전이면 정상 진행
+```
+
+**중요:**
+- 구버전 감지 시 **위 에러 메시지만 출력하고 preflight 검사는 절대 진행하지 않는다.** 정적 검사, 빌드, 리포트 생성 모두 중단.
+- 네트워크 실패로 버전 조회 불가 시에는 **진행한다** (사용자 작업 막지 않음). 단 리포트 헤더에 `⚠️ 버전 체크 실패` 1줄 표시.
+- `CURRENT_VERSION` 값은 이 SKILL.md 상단의 `SKILL_VERSION` 주석과 반드시 일치.
+
+#### 0-2. 실행 정보 캡처
+
+버전 체크 통과 후, 리포트 헤더에 쓸 정보를 수집한다.
 
 ```bash
 date '+%Y-%m-%d %H:%M:%S %Z'    # 실행 시각
 pwd                              # 작업 디렉토리
 ```
 
-버전은 이 SKILL.md 상단의 `SKILL_VERSION` 주석에서 읽어서 리포트에 표시한다 (현재: **0.2.1**).
+버전은 위 `CURRENT_VERSION` (= SKILL_VERSION 주석 값)을 사용한다 (현재: **0.2.2**).
 
 ### 1단계: 트랙 감지
 
