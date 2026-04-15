@@ -1,0 +1,11 @@
+{
+  "name": "lpad-preflight",
+  "version": "0.1.0",
+  "description": "lpad 배포 전 사전 점검 스킬",
+  "author": {
+    "name": "syntnote infra",
+    "email": "infra@syntnote.com"
+  },
+  "homepage": "https://github.com/syntnote/lpad-claude-plugins",
+  "keywords": ["lpad", "deploy", "preflight", "aws", "docker"]
+}
