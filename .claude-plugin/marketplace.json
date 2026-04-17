@@ -1,15 +1,15 @@
 {
-  "name": "syntnote-lpad",
+  "name": "syntnote",
   "owner": {
     "name": "syntnote",
     "email": "infra@syntnote.com"
   },
-  "description": "신트노트 lpad 개발자용 Claude Code 플러그인 모음",
+  "description": "신트노트 Claude Code 플러그인 마켓플레이스",
   "plugins": [
     {
-      "name": "lpad-preflight",
-      "source": "./lpad-preflight",
-      "description": "lpad 배포 전 프로젝트 사전 점검 — 트랙 자동 감지, 빌드/린트 실행, 설정 검증",
+      "name": "lpad",
+      "source": "./lpad",
+      "description": "lpad 개발자 도구 — 배포 전 사전 점검 등 lpad 플랫폼용 슬래시 커맨드 모음",
       "category": "devtools",
       "tags": ["lpad", "aws", "docker"],
       "strict": true

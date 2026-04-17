@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # lpad-preflight
 
-<!-- SKILL_VERSION: 0.4.0 — 리포트 헤더 생성 시 이 값을 사용할 것.
+<!-- SKILL_VERSION: 0.5.0 — 리포트 헤더 생성 시 이 값을 사용할 것.
      버전 변경 시 이 줄의 값과 ../../.claude-plugin/plugin.json의 version을 함께 bump. -->
 
 lpad 인프라에 배포할 프로젝트를 사전 점검한다. lpad = launchpad(발사대)에서 착안한 "이륙 전 점검(preflight check)".
@@ -32,11 +32,11 @@ lpad 인프라에 배포할 프로젝트를 사전 점검한다. lpad = launchpa
 현재 스킬 버전(`SKILL_VERSION`)을 GitHub의 최신 `plugin.json`과 비교한다.
 
 ```bash
-CURRENT_VERSION="0.4.0"   # ← SKILL.md 상단 SKILL_VERSION과 동일하게 유지
+CURRENT_VERSION="0.5.0"   # ← SKILL.md 상단 SKILL_VERSION과 동일하게 유지
 
 # 최신 버전 조회 (3초 timeout — 네트워크 이슈로 오래 기다리지 않음)
 LATEST_JSON=$(curl -sf --max-time 3 \
-  https://raw.githubusercontent.com/syntnote/lpad-devtools/main/lpad-preflight/.claude-plugin/plugin.json \
+  https://raw.githubusercontent.com/syntnote/lpad-devtools/main/lpad/.claude-plugin/plugin.json \
   2>/dev/null)
 
 if [[ -n "$LATEST_JSON" ]]; then
@@ -55,7 +55,7 @@ if [[ -n "$LATEST_JSON" ]]; then
       echo "최신 버전: v$LATEST_VERSION"
       echo ""
       echo "Claude Code에서 아래 명령 실행 후 다시 시도하세요:"
-      echo "  /plugin marketplace update syntnote-lpad"
+      echo "  /plugin marketplace update syntnote"
       echo ""
       echo "또는 Claude Code를 완전히 재시작하세요."
       exit 1
@@ -80,7 +80,7 @@ date '+%Y-%m-%d %H:%M:%S %Z'    # 실행 시각
 pwd                              # 작업 디렉토리
 ```
 
-버전은 위 `CURRENT_VERSION` (= SKILL_VERSION 주석 값)을 사용한다 (현재: **0.4.0**).
+버전은 위 `CURRENT_VERSION` (= SKILL_VERSION 주석 값)을 사용한다 (현재: **0.5.0**).
 
 ### 1단계: 트랙 감지
 
