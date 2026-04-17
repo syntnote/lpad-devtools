@@ -8,7 +8,7 @@
 
 | 카테고리 | 이름 | 상태 |
 |----------|------|------|
-| Claude Code 플러그인 | [`lpad-preflight`](#lpad-preflight) — 배포 전 사전 점검 | v0.3.0 |
+| Claude Code 플러그인 | [`lpad-preflight`](#lpad-preflight) — 배포 전 사전 점검 | v0.4.0 |
 | 프로젝트 템플릿 | — | 예정 |
 | 공용 GitHub Actions | — | 예정 |
 
@@ -53,7 +53,10 @@ Claude Code를 연 상태에서 아래를 순서대로 입력하면 끝. 별도 
 자기 프로젝트 디렉토리에서 `/lpad-preflight` 실행.
 
 - 트랙(Amplify/ECS) 자동 감지 (모노레포 지원)
-- 정적 검사: `Dockerfile`, `.gitignore`, `.dockerignore`, 헬스체크 엔드포인트, 포트 일치, 작업 트리 clean, origin 동기화
-- 실행 검사: `docker build`, `npm ci`/`build`, 린트 실제 실행
-- 엄격 이진 판정(필수 실패/경고/통과) + 구체적 수정 가이드
+- 기본 정적 검사: `Dockerfile`, `.gitignore`, `.dockerignore`, 헬스체크 엔드포인트, 포트 일치, 작업 트리 clean, origin 동기화
+- **환경변수·URL·비밀 검증**: `.env.example`과 코드 참조 env 대조, 하드코딩 URL, Vite `process.env` 오용, 프론트 번들 비밀 노출, `.env.local` 의존
+- **백엔드 안정성**: CORS 설정, 헬스체크의 외부 의존성 검출
+- **빌드·테스트 인프라**: 테스트 스크립트/파일 존재, Dockerfile 멀티스테이지, CI 빌드·테스트 스텝 포함
+- 실행 검사: `docker build` + 컨테이너 헬스체크, `npm ci`/`build`, 린트/타입/테스트 실제 실행
+- 엄격 이진 판정(PASS/FAIL만) + 구체적 수정 가이드 + 파일:라인 인용
 - 실행 시 자체 버전 체크 — 구버전 사용 시 업데이트 안내

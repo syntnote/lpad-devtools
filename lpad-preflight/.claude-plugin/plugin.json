@@ -1,6 +1,6 @@
 {
   "name": "lpad-preflight",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "lpad 배포 전 사전 점검 스킬",
   "author": {
     "name": "syntnote infra",

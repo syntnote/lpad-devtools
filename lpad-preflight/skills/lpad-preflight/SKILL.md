@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # lpad-preflight
 
-<!-- SKILL_VERSION: 0.3.0 — 리포트 헤더 생성 시 이 값을 사용할 것.
+<!-- SKILL_VERSION: 0.4.0 — 리포트 헤더 생성 시 이 값을 사용할 것.
      버전 변경 시 이 줄의 값과 ../../.claude-plugin/plugin.json의 version을 함께 bump. -->
 
 lpad 인프라에 배포할 프로젝트를 사전 점검한다. lpad = launchpad(발사대)에서 착안한 "이륙 전 점검(preflight check)".
@@ -32,7 +32,7 @@ lpad 인프라에 배포할 프로젝트를 사전 점검한다. lpad = launchpa
 현재 스킬 버전(`SKILL_VERSION`)을 GitHub의 최신 `plugin.json`과 비교한다.
 
 ```bash
-CURRENT_VERSION="0.3.0"   # ← SKILL.md 상단 SKILL_VERSION과 동일하게 유지
+CURRENT_VERSION="0.4.0"   # ← SKILL.md 상단 SKILL_VERSION과 동일하게 유지
 
 # 최신 버전 조회 (3초 timeout — 네트워크 이슈로 오래 기다리지 않음)
 LATEST_JSON=$(curl -sf --max-time 3 \
@@ -80,7 +80,7 @@ date '+%Y-%m-%d %H:%M:%S %Z'    # 실행 시각
 pwd                              # 작업 디렉토리
 ```
 
-버전은 위 `CURRENT_VERSION` (= SKILL_VERSION 주석 값)을 사용한다 (현재: **0.3.0**).
+버전은 위 `CURRENT_VERSION` (= SKILL_VERSION 주석 값)을 사용한다 (현재: **0.4.0**).
 
 ### 1단계: 트랙 감지
 
@@ -151,6 +151,47 @@ ls -la
   ```
 - 리포트에 **구체적 상태**(behind/ahead/diverged/upstream 미설정)와 **복구 명령**을 함께 명시
 
+#### 환경변수·URL·비밀 (V1~V4, V7) — 비개발자 배포에서 가장 자주 깨지는 영역
+
+**V1. `.env.example` 존재 + 코드와 일치** (적용: 코드에서 env 참조가 있을 때 또는 `.env.example`이 있을 때)
+- `.env.example` 파일이 루트(또는 해당 서브 프로젝트 루트)에 존재해야 함. 없으면 FAIL.
+- 코드에서 참조하는 환경변수 이름 전부 `.env.example`의 키 목록에 있어야 함. 누락 시 FAIL.
+- 참조 탐색 패턴:
+  - JS/TS: `process\.env\.[A-Z_][A-Z0-9_]*`, `import\.meta\.env\.[A-Z_][A-Z0-9_]*`
+  - Python: `os\.getenv\(["']([^"']+)["']`, `os\.environ\[["']([^"']+)["']\]`, `os\.environ\.get\(["']([^"']+)["']`
+- 리포트에 누락된 변수명 목록과 "`.env.example`에 해당 변수를 추가하세요" 안내.
+- **이유:** 로컬선 되는데 배포 후 안 되는 문제의 대부분이 이것. 인프라팀이 GitHub Secrets에 주입할 변수를 `.env.example`로 파악함.
+
+**V2. 하드코딩 URL 금지** (적용: 항상)
+- grep 범위: `src/`, `app/`, 루트의 `.py`·`.ts`·`.tsx`·`.js`·`.jsx` 파일. 제외: `*.test.*`, `*.spec.*`, `__tests__/`, `tests/`, `.env.example`, 주석.
+- 탐지 패턴:
+  - `localhost:\d+`
+  - `127\.0\.0\.1:\d+`
+  - `http://[^/"']*\.(com|net|io|app|dev|co|kr)` — http 프로토콜 외부 도메인
+- 발견 시 FAIL. 파일:라인과 함께 "환경변수로 분리 (예: `VITE_API_URL`, `API_BASE_URL`)" 안내.
+- **이유:** AI가 생성한 코드에 `http://localhost:8000/api`가 그대로 박혀 있는 빈도 극악.
+
+**V3. Vite 프로젝트의 `process.env` 오용** (적용: `vite.config.*` 있는 프로젝트)
+- `src/` 내부 파일에서 `process\.env\.` grep.
+- `vite.config.*` 자체와 설정 파일은 제외 (Node 환경에서 정당).
+- 발견 시 FAIL. "Vite 클라이언트 코드는 `import.meta.env.VITE_*`로 접근. `process.env.*`는 번들에 undefined로 남음."
+
+**V4. 프론트 번들 비밀 노출 금지** (적용: Amplify 트랙)
+- `.env.example`의 키 이름에서 블랙리스트 패턴 검사:
+  - `VITE_.*SECRET.*`
+  - `VITE_.*PRIVATE.*`
+  - `VITE_.*PASSWORD.*`
+  - `VITE_.*JWT.*`
+  - `VITE_.*_SK_`·`VITE_.*_SERVICE_KEY` (Supabase service role 등)
+- 허용(오탐 방지): `VITE_.*PUBLIC.*`, `VITE_.*ANON.*`(Supabase anon key 등 공개 키)
+- 발견 시 FAIL. "Vite env는 번들 JS에 그대로 박혀 공개됩니다. 비밀은 백엔드 API로 감싸세요."
+
+**V7. `.env.local` / `.env.development` 의존 금지** (적용: 항상)
+- 코드·설정에서 다음 grep:
+  - 파일명 문자열: `\.env\.local`, `\.env\.development`
+  - dotenv 호출: `dotenv\.config\(\s*\{\s*path[^}]*\.(local|development)`
+- 발견 시 FAIL. "해당 변수는 `.env.example`에 옮기고 배포 환경에서 주입되도록 인프라팀에 요청하세요."
+
 #### ECS 트랙 항목
 
 **E1. Dockerfile 존재**
@@ -173,6 +214,23 @@ ls -la
 - Dockerfile에 `USER <name>` 지시문 필수
 - 없으면 FAIL
 
+**V5. CORS 미들웨어 설정** (적용: ECS 트랙의 웹 API)
+- 프레임워크 감지:
+  - FastAPI: `from fastapi.middleware.cors import CORSMiddleware` + `app\.add_middleware\(\s*CORSMiddleware` 존재
+  - Express: `require\(['"]cors['"]\)` 또는 `import\s+cors\s+from\s+['"]cors['"]` + `app\.use\(\s*cors\(`
+- 조건:
+  - 미들웨어 미등록 → FAIL ("프론트 도메인에서 API 호출 시 브라우저가 차단")
+  - `allow_origins\s*=\s*\[["']\*["']\]` 또는 `origin:\s*['"]\*['"]` → FAIL ("와일드카드는 자격증명 포함 요청에서 차단되고 운영 보안상 위험")
+  - 등록되어 있고 `*` 아니면 PASS (구체 값은 환경변수 주입일 수 있어 더 깊이 검증 안 함)
+- CLI/배치 등 웹 API 아닌 프로젝트는 검사 대상 아님.
+
+**V6. 헬스체크 단순성** (적용: ECS 트랙)
+- `/api/health` 핸들러 본문(함수 정의 블록)에서 외부 의존성 호출 grep:
+  - DB/ORM: `session\.(query|execute)`, `db\.`, `prisma\.`, `\.find\(`, `\.findOne\(`, `\.findMany\(`, `select\(`, `SELECT\s+`
+  - HTTP: `requests\.(get|post)`, `httpx\.`, `urllib\.request`, `fetch\(`, `axios\.`
+  - Redis/Cache: `redis\.`, `cache\.get`, `cache\.set`
+- 발견 시 FAIL. "헬스체크는 `return {\"ok\": True}` 같은 단순 응답만. 외부 의존성 체크하면 DB 장애 시 컨테이너 재시작 루프로 장애 증폭."
+
 #### Amplify 트랙 항목
 
 **A1. `package.json`의 `build` 스크립트**
@@ -185,6 +243,31 @@ ls -la
 **A3. lockfile 존재**
 - `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock` 중 하나 필수
 - 없으면 FAIL (CI에서 install 실패)
+
+#### 빌드·테스트 인프라 (B1~B3) — 회귀 방지 체계
+
+**B1. 테스트 스크립트·파일 존재** (적용: 항상)
+- Node 프로젝트:
+  - `package.json`의 `scripts.test`가 존재하고 placeholder(`"echo \"Error: no test specified\" && exit 1"` 또는 이와 유사한 패턴) 아니어야 함
+  - 테스트 파일 최소 1개 존재: `*.test.{js,jsx,ts,tsx}`, `*.spec.{js,jsx,ts,tsx}`, `__tests__/` 내부 파일
+- Python 프로젝트:
+  - pytest 설정 파일 존재: `pyproject.toml`(`[tool.pytest]` 섹션), `pytest.ini`, `setup.cfg`(`[tool:pytest]` 섹션) 중 하나
+  - 테스트 파일 최소 1개: `tests/` 디렉토리 내 `test_*.py` 또는 `*_test.py`
+- 둘 중 어느 조건이라도 미충족 시 FAIL. "최소 smoke test 1개로도 시작 — 빌드 이후 회귀 감지의 최소선."
+- **이유:** 사용자가 빌드 안 해보고 PR 올리는 관행을 구조적으로 차단. 테스트가 없으면 CI에서 회귀 감지 불가능.
+
+**B2. Dockerfile 멀티스테이지 빌드** (적용: ECS 트랙)
+- Dockerfile에서 `^FROM\s+.*\s+AS\s+\w+`(대소문자 무관) 패턴 2회 이상 등장해야 함
+- 단일 스테이지면 FAIL. "빌드 도구가 런타임 이미지에 포함되어 이미지 비대 + 공격면 확대. `FROM ... AS builder` → `FROM ... AS runtime` 구조로 분리."
+
+**B3. CI 워크플로우에 빌드·테스트 스텝 포함** (적용: 항상)
+- `.github/workflows/deploy-*.yml` 내용을 Read해서 빌드 명령 grep:
+  - ECS: `docker\s+build`, `docker\s+buildx`, `docker/build-push-action`
+  - Amplify(커스텀 워크플로우인 경우): `npm\s+ci`와 `npm\s+run\s+build`(또는 pnpm/yarn 등가), `build-push-action` 등
+- 테스트 스텝도 확인: `npm\s+test`, `pytest`, `yarn\s+test`, `pnpm\s+test` 중 하나
+- 빌드 또는 테스트 명령이 워크플로우에 없으면 FAIL. "인프라팀에 'deploy 워크플로우에 build·test 스텝 추가' 요청 필요."
+- **이유:** 개발자가 로컬 빌드·테스트 없이 push해도 CI에서 걸리는 안전망 확보.
+- 참고: `.github/workflows/` 수정은 인프라팀 권한. 본 검사는 **검증만** 한다.
 
 ### 3단계: 실행 검사
 
