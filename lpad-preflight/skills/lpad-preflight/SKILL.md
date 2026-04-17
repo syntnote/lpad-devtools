@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # lpad-preflight
 
-<!-- SKILL_VERSION: 0.2.2 — 리포트 헤더 생성 시 이 값을 사용할 것.
+<!-- SKILL_VERSION: 0.3.0 — 리포트 헤더 생성 시 이 값을 사용할 것.
      버전 변경 시 이 줄의 값과 ../../.claude-plugin/plugin.json의 version을 함께 bump. -->
 
 lpad 인프라에 배포할 프로젝트를 사전 점검한다. lpad = launchpad(발사대)에서 착안한 "이륙 전 점검(preflight check)".
@@ -32,11 +32,11 @@ lpad 인프라에 배포할 프로젝트를 사전 점검한다. lpad = launchpa
 현재 스킬 버전(`SKILL_VERSION`)을 GitHub의 최신 `plugin.json`과 비교한다.
 
 ```bash
-CURRENT_VERSION="0.2.2"   # ← SKILL.md 상단 SKILL_VERSION과 동일하게 유지
+CURRENT_VERSION="0.3.0"   # ← SKILL.md 상단 SKILL_VERSION과 동일하게 유지
 
 # 최신 버전 조회 (3초 timeout — 네트워크 이슈로 오래 기다리지 않음)
 LATEST_JSON=$(curl -sf --max-time 3 \
-  https://raw.githubusercontent.com/syntnote/lpad-claude-plugins/main/lpad-preflight/.claude-plugin/plugin.json \
+  https://raw.githubusercontent.com/syntnote/lpad-devtools/main/lpad-preflight/.claude-plugin/plugin.json \
   2>/dev/null)
 
 if [[ -n "$LATEST_JSON" ]]; then
@@ -80,7 +80,7 @@ date '+%Y-%m-%d %H:%M:%S %Z'    # 실행 시각
 pwd                              # 작업 디렉토리
 ```
 
-버전은 위 `CURRENT_VERSION` (= SKILL_VERSION 주석 값)을 사용한다 (현재: **0.2.2**).
+버전은 위 `CURRENT_VERSION` (= SKILL_VERSION 주석 값)을 사용한다 (현재: **0.3.0**).
 
 ### 1단계: 트랙 감지
 
@@ -119,6 +119,37 @@ ls -la
 **C4. main 직접 commit 없음** (적용: git 히스토리에 main 브랜치 있을 때)
 - `git log main --oneline -20`에서 비-merge 직접 commit 확인
 - merge commit이 아닌 직접 commit 발견 시 FAIL
+
+**C5. 작업 트리 클린** (적용: git 저장소일 때)
+- `git status --porcelain` 결과가 비어있어야 함
+- 변경/staged/untracked 파일 하나라도 있으면 FAIL (파일명만 제시, 내용 출력 금지)
+- 수정 가이드: 필요 파일은 commit, 불필요 파일은 `.gitignore`에 추가
+- 이유: 커밋 안 된 로컬 수정은 배포에 반영되지 않음. 검증한 코드와 배포되는 코드가 달라짐.
+
+**C6. origin 기준 최신 상태** (적용: git 저장소일 때)
+- 배포 워크플로우는 원격 main 기준으로 실행되므로 로컬과 원격이 반드시 일치해야 함
+- 로직:
+  ```bash
+  UPSTREAM=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null)
+  if [[ -z "$UPSTREAM" ]]; then
+    echo "FAIL: upstream 미설정 — 'git push -u origin <branch>' 필요"
+  else
+    git fetch --quiet
+    LOCAL=$(git rev-parse HEAD)
+    REMOTE=$(git rev-parse @{u})
+    BASE=$(git merge-base HEAD @{u})
+    if [[ "$LOCAL" == "$REMOTE" ]]; then
+      echo "PASS"
+    elif [[ "$LOCAL" == "$BASE" ]]; then
+      echo "FAIL: behind — 'git pull' 필요 (로컬이 원격보다 뒤처짐)"
+    elif [[ "$REMOTE" == "$BASE" ]]; then
+      echo "FAIL: ahead — 'git push' 필요 (로컬 commit이 원격에 없음, 배포는 원격 기준 실행)"
+    else
+      echo "FAIL: diverged — 'git pull --rebase' 후 재시도 (로컬과 원격이 갈라짐)"
+    fi
+  fi
+  ```
+- 리포트에 **구체적 상태**(behind/ahead/diverged/upstream 미설정)와 **복구 명령**을 함께 명시
 
 #### ECS 트랙 항목
 
