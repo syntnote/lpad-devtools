@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # lpad-preflight
 
-<!-- SKILL_VERSION: 0.6.0 — 리포트 헤더 생성 시 이 값을 사용할 것.
+<!-- SKILL_VERSION: 0.6.1 — 리포트 헤더 생성 시 이 값을 사용할 것.
      버전 변경 시 이 줄의 값과 ../../.claude-plugin/plugin.json의 version을 함께 bump. -->
 
 lpad 인프라에 배포할 프로젝트를 사전 점검한다. lpad = launchpad(발사대)에서 착안한 "이륙 전 점검(preflight check)".
@@ -32,7 +32,7 @@ lpad 인프라에 배포할 프로젝트를 사전 점검한다. lpad = launchpa
 현재 스킬 버전(`SKILL_VERSION`)을 GitHub의 최신 `plugin.json`과 비교한다.
 
 ```bash
-CURRENT_VERSION="0.6.0"   # ← SKILL.md 상단 SKILL_VERSION과 동일하게 유지
+CURRENT_VERSION="0.6.1"   # ← SKILL.md 상단 SKILL_VERSION과 동일하게 유지
 
 # 최신 버전 조회 (3초 timeout — 네트워크 이슈로 오래 기다리지 않음)
 LATEST_JSON=$(curl -sf --max-time 3 \
@@ -80,7 +80,7 @@ date '+%Y-%m-%d %H:%M:%S %Z'    # 실행 시각
 pwd                              # 작업 디렉토리
 ```
 
-버전은 위 `CURRENT_VERSION` (= SKILL_VERSION 주석 값)을 사용한다 (현재: **0.6.0**).
+버전은 위 `CURRENT_VERSION` (= SKILL_VERSION 주석 값)을 사용한다 (현재: **0.6.1**).
 
 ### 1단계: 트랙 감지
 
@@ -311,10 +311,14 @@ ls -la
 
 **R-E1. Docker 빌드**
 ```bash
-docker build -t lpad-preflight-test:latest . 2>&1 | tail -50
+docker build --no-cache -t lpad-preflight-test:latest . 2>&1 | tail -50
 ```
 - timeout 600000
 - 실패 또는 `docker` 명령 없으면 FAIL
+- **`--no-cache` 는 생략하지 않는다.** CI 는 항상 깨끗한 러너에서 도므로 캐시가 없다.
+  캐시가 있는 로컬 빌드는 통과하는데 `--no-cache` 로는 실패하는 경우가 실제로 있었다
+  (레이어 캐시 때문에 몇 분 전 코드가 그대로 돌아 실패 원인이 가려진다).
+  캐시를 쓰면 이 검사는 CI 결과를 예측하지 못하므로 검사의 목적 자체가 사라진다.
 
 **R-E2. 컨테이너 헬스체크**
 ```bash

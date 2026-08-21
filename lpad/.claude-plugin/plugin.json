@@ -1,6 +1,6 @@
 {
   "name": "lpad",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "lpad 플랫폼 개발자용 Claude Code 슬래시 커맨드 모음 (현재: /lpad-preflight)",
   "author": {
     "name": "syntnote infra",
