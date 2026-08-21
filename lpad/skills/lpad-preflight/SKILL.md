@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # lpad-preflight
 
-<!-- SKILL_VERSION: 0.5.0 — 리포트 헤더 생성 시 이 값을 사용할 것.
+<!-- SKILL_VERSION: 0.6.0 — 리포트 헤더 생성 시 이 값을 사용할 것.
      버전 변경 시 이 줄의 값과 ../../.claude-plugin/plugin.json의 version을 함께 bump. -->
 
 lpad 인프라에 배포할 프로젝트를 사전 점검한다. lpad = launchpad(발사대)에서 착안한 "이륙 전 점검(preflight check)".
@@ -32,7 +32,7 @@ lpad 인프라에 배포할 프로젝트를 사전 점검한다. lpad = launchpa
 현재 스킬 버전(`SKILL_VERSION`)을 GitHub의 최신 `plugin.json`과 비교한다.
 
 ```bash
-CURRENT_VERSION="0.5.0"   # ← SKILL.md 상단 SKILL_VERSION과 동일하게 유지
+CURRENT_VERSION="0.6.0"   # ← SKILL.md 상단 SKILL_VERSION과 동일하게 유지
 
 # 최신 버전 조회 (3초 timeout — 네트워크 이슈로 오래 기다리지 않음)
 LATEST_JSON=$(curl -sf --max-time 3 \
@@ -80,7 +80,7 @@ date '+%Y-%m-%d %H:%M:%S %Z'    # 실행 시각
 pwd                              # 작업 디렉토리
 ```
 
-버전은 위 `CURRENT_VERSION` (= SKILL_VERSION 주석 값)을 사용한다 (현재: **0.5.0**).
+버전은 위 `CURRENT_VERSION` (= SKILL_VERSION 주석 값)을 사용한다 (현재: **0.6.0**).
 
 ### 1단계: 트랙 감지
 
@@ -203,8 +203,27 @@ ls -la
 
 **E3. 헬스체크 엔드포인트 구현**
 - lpad 기본 경로 `/api/health`
-- 앱 코드에서 grep: `"/api/health"`, `'/api/health'`, `@app.get.*health`, `app.get.*health`
-- 미발견 시 FAIL
+- **아래 (a)·(b) 중 하나라도 발견되면 PASS.** 프레임워크에 따라 경로가 코드에 문자열로
+  나타나지 않는다 — 파일 경로가 곧 라우트인 구성이 있다.
+
+(a) 명시적 라우트 등록 — 앱 코드에서 grep:
+  `"/api/health"`, `'/api/health'`, `@app.get.*health`, `app.get.*health`,
+  `router\.(get|GET).*health`, `HandleFunc.*health`
+
+(b) 파일 기반 라우팅 — 아래 경로에 파일이 존재:
+  - Next.js App Router: `**/app/api/health/route.{ts,tsx,js,jsx,mjs}`
+  - Next.js Pages Router: `**/pages/api/health.{ts,js,mjs}`
+  - SvelteKit: `**/routes/api/health/+server.{ts,js}`
+  - Nuxt: `**/server/api/health.{ts,js}`
+  - Remix: `**/routes/api.health.{ts,tsx,js}`
+
+  파일을 찾았으면 그 안에 핸들러가 있는지도 확인한다
+  (`export function GET`, `export async function GET`, `defineEventHandler`, `export const GET` 등).
+
+- (a)·(b) 둘 다 미발견 시 FAIL
+- **⚠️ (b)를 확인하지 않고 grep 결과만으로 FAIL 을 내지 말 것.**
+  Next.js App Router 에서는 `/api/health` 문자열이 소스에 전혀 없는 것이 정상이며,
+  이걸 FAIL 로 잡으면 정상 구현을 결함으로 보고하는 오탐이다.
 
 **E4. `.dockerignore` 존재 + `.env` 제외**
 - 파일 없거나 `.env`, `.env.*` 누락 시 FAIL (시크릿 이미지 포함 위험)
@@ -214,8 +233,18 @@ ls -la
 - Dockerfile에 `USER <name>` 지시문 필수
 - 없으면 FAIL
 
-**V5. CORS 미들웨어 설정** (적용: ECS 트랙의 웹 API)
-- 프레임워크 감지:
+**V5. CORS 미들웨어 설정** (적용: ECS 트랙에서 **다른 출처**의 프론트가 호출하는 API)
+
+- **먼저 적용 대상인지 판정한다.** 화면과 API 가 같은 프로세스에서 서빙되는 풀스택
+  구성은 **동일 출처라 preflight 요청 자체가 발생하지 않는다** — 검사 대상이 아니므로
+  리포트에 넣지 않는다. 다음 중 하나가 있으면 그렇게 판정한다:
+  `next.config.*`, `nuxt.config.*`, `svelte.config.*`, `remix.config.*`,
+  `astro.config.*`, 또는 서버가 템플릿을 렌더하는 구성(Django·Rails 등).
+  - 단, 그런 프로젝트가 CORS 미들웨어를 **명시적으로 등록했다면** 와일드카드 검사만 수행한다.
+  - **⚠️ 이 판정을 건너뛰고 "미들웨어 미등록 → FAIL" 을 적용하지 말 것.**
+    같은 출처 앱에 CORS 를 요구하는 것은 오탐이다.
+
+- 프레임워크 감지 (분리된 프론트가 호출하는 API 인 경우):
   - FastAPI: `from fastapi.middleware.cors import CORSMiddleware` + `app\.add_middleware\(\s*CORSMiddleware` 존재
   - Express: `require\(['"]cors['"]\)` 또는 `import\s+cors\s+from\s+['"]cors['"]` + `app\.use\(\s*cors\(`
 - 조건:
@@ -249,7 +278,10 @@ ls -la
 **B1. 테스트 스크립트·파일 존재** (적용: 항상)
 - Node 프로젝트:
   - `package.json`의 `scripts.test`가 존재하고 placeholder(`"echo \"Error: no test specified\" && exit 1"` 또는 이와 유사한 패턴) 아니어야 함
-  - 테스트 파일 최소 1개 존재: `*.test.{js,jsx,ts,tsx}`, `*.spec.{js,jsx,ts,tsx}`, `__tests__/` 내부 파일
+  - 테스트 파일 최소 1개 존재. **확장자는 `js jsx mjs cjs ts tsx mts cts` 를 모두 인정한다:**
+    `*.test.*`, `*.spec.*`, 그리고 `__tests__/` · `test/` · `tests/` 디렉토리 내부 파일.
+    **⚠️ `.mjs` / `.cjs` 를 빼먹지 말 것** — `node --test test/*.test.mjs` 는 흔한 구성이며,
+    이걸 못 읽고 "테스트 파일 없음" FAIL 을 내면 오탐이다.
 - Python 프로젝트:
   - pytest 설정 파일 존재: `pyproject.toml`(`[tool.pytest]` 섹션), `pytest.ini`, `setup.cfg`(`[tool:pytest]` 섹션) 중 하나
   - 테스트 파일 최소 1개: `tests/` 디렉토리 내 `test_*.py` 또는 `*_test.py`

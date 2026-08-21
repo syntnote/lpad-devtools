@@ -8,7 +8,7 @@
 
 | 카테고리 | 이름 | 제공 커맨드 | 상태 |
 |----------|------|-------------|------|
-| Claude Code 플러그인 | [`lpad`](#claude-code-플러그인-lpad) | `/lpad-preflight` | v0.5.0 |
+| Claude Code 플러그인 | [`lpad`](#claude-code-플러그인-lpad) | `/lpad-preflight` | v0.6.0 |
 | 프로젝트 템플릿 | — | — | 예정 |
 | 공용 GitHub Actions | — | — | 예정 |
 
